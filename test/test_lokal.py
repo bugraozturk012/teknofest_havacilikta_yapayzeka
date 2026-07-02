@@ -26,11 +26,7 @@ from kaynak_kodlar.pozisyon_kestirimi import PozisyonKestirimi
 from kaynak_kodlar.goruntu_eslestirme import GoruntuEslestirme
 
 
-# ============================================================
-# AYARLAR
-# ============================================================
-# Kendi test videonuzu bu dosyanın yanına "video.mp4" olarak koyun,
-# ya da burayı kendi yolunuzla değiştirin.
+# kendi test videonuzu bu dosyanın yanına "video.mp4" olarak koyun
 VIDEO_YOLU = os.path.join(os.path.dirname(os.path.abspath(__file__)), "video.mp4")
 FPS_HEDEF      = 7.5
 ISLEM_GENISLIK = 640   # YOLO bu çözünürlükte işler (daha geniş = yavaş)
@@ -79,7 +75,7 @@ def bilgi_ekrani_ciz(kare, tespit_sonuc, poz_sonuc, eslestirme_sonuc, fps, healt
         etiketler = {0: "Tasit", 1: "Insan", 2: "UAP", 3: "UAI"}
         renk = renkler.get(sinif, (200, 200, 200))
         cv2.rectangle(overlay, (x1, y1), (x2, y2), renk, 2)
-        etiket = f"{etiketler.get(sinif, '?')} m:{obj['motion_status']} l:{obj['landing_status']}"
+        etiket = f"{etiketler.get(sinif, '?')} m:{obj['moving_status']} l:{obj['landing_status']}"
         cv2.putText(overlay, etiket, (x1, max(y1 - 6, 12)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, renk, 1)
 
@@ -90,7 +86,7 @@ def bilgi_ekrani_ciz(kare, tespit_sonuc, poz_sonuc, eslestirme_sonuc, fps, healt
         x2 = int(ue["bottom_right_x"])
         y2 = int(ue["bottom_right_y"])
         cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 255, 255), 2)
-        cv2.putText(overlay, f"REF#{ue['object_id']}", (x1, max(y1 - 6, 12)),
+        cv2.putText(overlay, f"REF#{ue['reference']}", (x1, max(y1 - 6, 12)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
     # Bilgi paneli (sol üst)
@@ -124,8 +120,6 @@ def main():
     print("  TEKNOFEST 2026 — LOKAL TEST")
     print("=" * 55)
 
-    # Modülleri yükle (model yolu proje köküne göre relatif olduğundan
-    # cwd'den bağımsız çalışması için PROJE_KOKU ile birleştiriyoruz)
     print("[INIT] Nesne tespiti yükleniyor...")
     model_yolu = os.path.join(PROJE_KOKU, config.NESNE_TESPIT_MODEL)
     nesne = NesneTespiti(model_yolu=model_yolu)

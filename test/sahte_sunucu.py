@@ -1,17 +1,14 @@
 """
 TEKNOFEST 2026 - Sahte Yarışma Sunucusu
 
-Lokal test için gerçek sunucu API'sini taklit eder. v2.1.0 resmi bağlantı
-arayüzü (26.06.2026) ile birebir uyumlu:
-- GET /progress/     → {frame_index, total_frames, completed, session_name}
-- GET /frames/       → Sıradaki TEK karenin listesi ([] ise oturum bitti)
-- GET /translation/  → Sıradaki TEK karenin translation'ı (frames/ ile aynı index)
-- GET /reference/    → Görev 3 referans nesneleri + aktif kare pencereleri
-- GET /media/<dosya> → Kare görüntüsü
-- GET /media/referanslar/<dosya> → Referans nesne görüntüsü
-- POST /prediction/  → Sonuç alır; SADECE sıradaki kare için kabul eder,
-                       kabul edilince sıradaki index'e ilerler (sunucu
-                       tahmin gönderilmeden bir sonraki kareyi vermez).
+Lokal test için gerçek sunucu API'sini taklit eder (v2.1.0 uyumlu):
+- GET /progress/     -> {frame_index, total_frames, completed, session_name}
+- GET /frames/       -> sıradaki TEK karenin listesi ([] ise oturum bitti)
+- GET /translation/  -> sıradaki TEK karenin translation'ı
+- GET /reference/    -> Görev 3 referans nesneleri + aktif kare pencereleri
+- GET /media/<dosya> -> kare görüntüsü
+- GET /media/referanslar/<dosya> -> referans nesne görüntüsü
+- POST /prediction/  -> sadece sıradaki kareyi kabul eder, kabul edilince ilerler
 
 Kullanım: python sahte_sunucu.py
 """
@@ -31,15 +28,12 @@ if hasattr(sys.stdout, "reconfigure"):
 
 app = Flask(__name__)
 
-# ============================================================
-# AYARLAR
-# ============================================================
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 VIDEO_YOLU = os.path.join(_BASE_DIR, "video.mp4")
 KARELER_KLASORU = os.path.join(_BASE_DIR, "kareler")
 REFERANSLAR_KLASORU = os.path.join(_BASE_DIR, "..", "referanslar")
-FPS = 7.5  # Şartname: 7.5 FPS
-SAGLIKLI_KARE = 450  # İlk 1 dakika sağlıklı
+FPS = 7.5
+SAGLIKLI_KARE = 450  # ilk 1 dakika sağlıklı
 SESSION_NAME = "test_video_V1"
 
 
@@ -81,22 +75,20 @@ def videodan_kare_cikar():
             cv2.imwrite(os.path.join(KARELER_KLASORU, dosya), frame)
             dosya_adlari.append(dosya)
             kare_sayaci += 1
-            if kare_sayaci >= 2250:  # Şartname: max 2250 kare
+            if kare_sayaci >= 2250:  # şartname: max 2250 kare
                 break
     cap.release()
     print(f"[SUNUCU] {kare_sayaci} kare çıkarıldı ({VIDEO_YOLU} -> {KARELER_KLASORU})")
     return dosya_adlari
 
 
-# ============================================================
-# OTURUM DURUMU (tek seferlik hesaplanır, index ile ilerler)
-# ============================================================
+# oturum durumu, tek seferlik hesaplanır, index ile ilerler
 _kare_dosyalari = videodan_kare_cikar()
 TOPLAM_KARE = len(_kare_dosyalari)
 
 _frame_listesi = []
 _translation_listesi = []
-random.seed(42)  # Sağlık durumu tekrar sorgulamalarda DEĞİŞMESİN (deterministik)
+random.seed(42)  # health durumu tekrar sorgulamalarda değişmesin
 for i, dosya_adi in enumerate(_kare_dosyalari):
     x, y, z = sahte_pozisyon(i)
     if i < SAGLIKLI_KARE:
@@ -121,16 +113,14 @@ for i, dosya_adi in enumerate(_kare_dosyalari):
         "health_status": health
     })
 
-# Sunucu tarafı ilerleme durumu (tek "kullanıcı" varsayımıyla basitleştirildi)
-_mevcut_index = 0
+_mevcut_index = 0  # tek "kullanıcı" varsayımıyla basitleştirildi
 
 
 def _referanslari_hazirla():
     """
-    referanslar/ klasöründeki görselleri Görev 3 referans nesnelerine
-    dönüştürür; her birine 2250 kareyi eşit ve ÇAKIŞMAYAN aralıklara bölerek
-    sıralı bir [frame_start, frame_end] penceresi atar (Q&A kuralı: aynı
-    anda sadece TEK referans aktif, aralıklar çakışmaz/sıralıdır).
+    referanslar/ klasöründeki görselleri Görev 3 referanslarına dönüştürür,
+    her birine 2250 kareyi eşit/çakışmayan aralıklara bölerek sıralı bir
+    pencere atar (Q&A kuralı: aynı anda tek referans aktif).
     """
     if not os.path.exists(REFERANSLAR_KLASORU) or TOPLAM_KARE == 0:
         return []
@@ -173,7 +163,7 @@ def get_progress():
 
 @app.route('/frames/', methods=['GET'])
 def get_frames():
-    """Sunucu artık sadece sıradaki TEK kareyi döner (tahmin gönderilmeden ilerlemez)."""
+    """Sadece sıradaki tek kareyi döner (tahmin gönderilmeden ilerlemez)."""
     if _mevcut_index >= TOPLAM_KARE:
         return jsonify([])
     return jsonify([_frame_listesi[_mevcut_index]])
@@ -209,11 +199,7 @@ def goruntu_gonder(dosya_adi):
 
 @app.route('/prediction/', methods=['POST'])
 def sonuc_al():
-    """
-    v2.1.0 formatını doğrular: {frame, detected_objects, detected_translations,
-    reference_predictions} — üst seviyede id/user YOK. Sadece sıradaki kare
-    için kabul eder ve index'i ilerletir; eski/tekrar gönderimler 406 döner.
-    """
+    """v2.1.0 formatını doğrular, sadece sıradaki kareyi kabul eder ve index'i ilerletir; tekrar gönderim 406 döner."""
     global _mevcut_index
     data = request.json
 

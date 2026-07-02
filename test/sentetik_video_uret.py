@@ -1,10 +1,7 @@
 """
-Gerçek bir test videonuz yoksa, uçtan uca pipeline testi (sahte_sunucu.py +
-main.py) için bu betik kısa, sentetik bir video üretir.
-
-DİKKAT: Bu video gerçek hava görüntüsü değildir — YOLO modeli üzerinde
-gerçekçi nesne tespiti beklemeyin. Amaç sadece sunucu<->istemci iletişiminin
-ve JSON formatının uçtan uca çalıştığını doğrulamaktır.
+Gerçek test videonuz yoksa, uçtan uca pipeline testi için kısa sentetik
+video üretir. Gerçek hava görüntüsü değildir, YOLO'dan anlamlı tespit
+beklemeyin - amaç sadece sunucu<->istemci iletişimini doğrulamak.
 
 Çalıştır: python test/sentetik_video_uret.py
 """

@@ -28,6 +28,7 @@ referanslar/
 # Lokal test çıktıları (test/sahte_sunucu.py tarafından üretilir)
 test/kareler/
 test/*.mp4
+test/degerlendirme_ciktilari/
 
 # Log dosyaları
 _logs/

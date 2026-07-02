@@ -1,14 +1,10 @@
 """
 TEKNOFEST 2026 - Sunucu İstemci Modülü
 
-v2.1.0 resmi bağlantı arayüzüne (26.06.2026) göre yeniden yazıldı:
-- Kimlik doğrulama (Token tabanlı)
-- Sunucu artık kareleri TEK TEK verir (tahmin gönderilmeden ilerlemez) -
-  eski "başta tüm listeyi çek" mimarisi kaldırıldı.
-- GET /progress/ ile kaldığı yerden devam (resume) desteği.
-- GET /reference/ ile Görev 3 referans nesneleri + aktif kare pencereleri.
-- POST /prediction/ - detected_objects, detected_translations, reference_predictions
-  (üst seviyede artık id/user alanı yok).
+v2.1.0 API: kareler tek tek verilir (tahmin gönderilmeden ilerlemez, eski
+"başta tüm listeyi çek" mimarisi yok), /progress/ ile resume, /reference/
+ile Görev 3 referansları + aktif pencereler. POST /prediction/ üst
+seviyede artık id/user içermiyor.
 """
 
 import requests
@@ -23,23 +19,20 @@ import config
 
 class SunucuIstemci:
     """
-    Yarışma sunucusuyla iletişimi yöneten sınıf.
+    Yarışma sunucusuyla iletişim.
 
-    v2.1.0 akışı:
-    0. (Gerekirse) Kullanıcı adı/şifre ile giriş yap, token al.
-    1. GET /progress/ ile oturumu tespit et (aktif oturum var mı, kaldığı yer neresi).
-    2. GET /reference/ ile Görev 3 referanslarını (varsa) tek seferde çek.
-    3. Döngü: GET /frames/ + /translation/ (sıradaki TEK kare) → işle → POST /prediction/.
-       Tahmin gönderilmeden sunucu bir sonraki kareyi vermez.
+    Akış: (varsa) giriş yap -> /progress/ ile oturumu ve kaldığı yeri bul ->
+    /reference/ ile Görev 3 referanslarını çek -> döngüde /frames/+/translation/
+    al, işle, /prediction/ ile gönder. Tahmin gitmeden sunucu sonraki kareyi vermiyor.
     """
 
     def __init__(self, sunucu_url=None, kullanici_url=None):
         self.sunucu_url = (sunucu_url or config.SUNUCU_URL).rstrip("/")
         self.kullanici_url = kullanici_url or config.KULLANICI_URL
-        self.oturum = requests.Session()  # Bağlantı havuzu + auth header için
+        self.oturum = requests.Session()  # bağlantı havuzu + auth header için
         self.token = None
 
-        # oturumu_baslat() tarafından doldurulur
+        # oturumu_baslat() doldurur
         self.oturum_adi = None
         self.toplam_kare = 0
         self.baslangic_index = 0
@@ -49,11 +42,7 @@ class SunucuIstemci:
             self.giris_yap()
 
     def giris_yap(self):
-        """
-        Resmi bağlantı arayüzündeki auth/ akışıyla uyumlu giriş.
-        Başarılı olursa alınan token, oturumun tüm isteklerine (görüntü
-        indirme dahil) otomatik eklenir.
-        """
+        """Token alır, oturumun tüm isteklerine (görüntü indirme dahil) otomatik eklenir."""
         try:
             yanit = self.oturum.post(
                 f"{self.sunucu_url}/{config.API_AUTH_PATH}",
@@ -74,7 +63,7 @@ class SunucuIstemci:
         return False
 
     def _get_ile_liste_al(self, api_path):
-        """GET isteğiyle bir JSON listesi çeker, retry'lı. Boş liste [] dönebilir (normal)."""
+        """GET ile JSON listesi çeker, retry'lı. Boş liste [] normal bir sonuç olabilir."""
         for deneme in range(config.ISTEK_MAX_RETRY):
             try:
                 response = self.oturum.get(
@@ -92,15 +81,9 @@ class SunucuIstemci:
 
     def oturumu_baslat(self):
         """
-        GET /progress/ ile aktif oturumu tespit eder ve kaldığı yeri öğrenir.
-
-        Returns:
-            dict {"oturum_adi", "toplam_kare", "baslangic_index", "tamamlandi"} → başarılı
-            None → sunucuya ulaşılamadı (bağlantı hatası, tekrar denenmeli)
-
-        NOT: session_name=None dönmesi "aktif oturum yok" demektir, bu bağlantı
-        hatasından FARKLIDIR (bu durumda None yerine tamamlandi=False, oturum_adi=None
-        içeren bir dict döner, çağıran taraf bunu kontrol etmeli).
+        /progress/ ile aktif oturumu ve kaldığı yeri bulur.
+        None dönerse sunucuya ulaşılamadı demektir - bu, session_name=None
+        (aktif oturum yok) durumundan farklı, çağıran taraf ikisini ayırt etmeli.
         """
         for deneme in range(config.ISTEK_MAX_RETRY):
             try:
@@ -131,15 +114,12 @@ class SunucuIstemci:
 
     def siradaki_kareyi_al(self):
         """
-        Sunucunun o an beklediği (henüz tahmin gönderilmemiş) TEK kareyi alır
-        ve görüntüyü indirir. Tahmin gönderilmeden tekrar çağrılırsa AYNI kare
-        döner (sunucu ilerlemez) - main.py'deki döngü bu yüzden her karede
-        tam olarak bir kez sonuc_gonder() çağırmalı.
+        Sunucunun beklediği tek kareyi alır ve indirir. Tahmin gönderilmeden
+        tekrar çağrılırsa aynı kare döner - main.py her karede tam bir kez
+        sonuc_gonder() çağırmalı.
 
-        Returns:
-            None  → oturum bitti veya aktif oturum yok (döngüden çık)
-            dict  → her zaman döner; frame=None ise görüntü indirilemedi demektir,
-                    yine de pozisyon ve sonuç sunucuya gönderilmeli (boş/varsayılan)
+        None -> oturum bitti/yok. dict -> her zaman döner, frame=None ise
+        indirme başarısız demektir ama yine de sonuç gönderilmeli.
         """
         kareler = self._get_ile_liste_al(config.API_FRAME_PATH)
         if not kareler:
@@ -177,14 +157,7 @@ class SunucuIstemci:
         }
 
     def _goruntu_indir(self, image_url):
-        """
-        Görüntüyü URL'den indirir ve numpy array olarak döner.
-
-        Resmi_arayuz/TAKIM_BAGLANTI_ARAYUZU/src/object_detection_model.py:
-        görüntüleri "media" öneki ekleyerek indiriyor
-        (evaluation_server_url + "media" + image_url). Auth token gerekiyorsa
-        self.oturum zaten Authorization header'ını taşıyor (giris_yap()'ta eklendi).
-        """
+        """Görüntüyü indirir, numpy array döner. Resmi kod "media" önekiyle indiriyor, auth token varsa header'da zaten var."""
         if not image_url:
             return None
         try:
@@ -206,10 +179,8 @@ class SunucuIstemci:
 
     def _cls_alanlarini_donustur(self, detected_objects):
         """
-        Şartname Şekil 17 örneğinde ve resmi bağlantı arayüzünde "cls" alanı
-        düz bir sayı değil, bir URL'dir (örn: "http://.../classes/1/").
-        config.SINIF_URL_FORMATINDA_GONDER True ise dönüşümü burada yaparız;
-        nesne tespiti modülü dahili olarak hep düz sayı ("0".."3") üretir.
+        "cls" düz sayı değil URL olarak gidiyor (classes/1/ gibi).
+        Nesne tespiti modülü dahili olarak hep düz sayı üretir, dönüşüm burada.
         """
         if not config.SINIF_URL_FORMATINDA_GONDER:
             return detected_objects
@@ -228,10 +199,7 @@ class SunucuIstemci:
         return donusturulmus
 
     def _reference_predictions_olustur(self, frame_url, reference_predictions):
-        """
-        goruntu_eslestirme.eslestir() çıktısını ({"reference": .., "top_left_x": ..})
-        v2.1.0 ReferencePrediction şemasına ({"reference": .., "frame": .., bbox..}) çevirir.
-        """
+        """eslestir() çıktısını v2.1.0 ReferencePrediction şemasına çevirir (frame alanı eklenir)."""
         return [
             {
                 "reference": r["reference"],
@@ -246,23 +214,7 @@ class SunucuIstemci:
 
     def sonuc_gonder(self, frame_url, detected_objects, detected_translations,
                      reference_predictions):
-        """
-        v2.1.0 formatında sonuç gönderir (üst seviyede id/user YOK):
-        {
-            "frame": "http://.../frames/4000/",
-            "detected_objects": [
-                {"cls": "http://.../classes/1/", "landing_status": "-1",
-                 "moving_status": "-1", "top_left_x": .., ...}
-            ],
-            "detected_translations": [
-                {"translation_x": 0.02, "translation_y": 0.01, "translation_z": 0.03}
-            ],
-            "reference_predictions": [
-                {"reference": "http://.../reference/1/", "frame": "http://.../frames/4000/",
-                 "top_left_x": .., ...}
-            ]
-        }
-        """
+        """v2.1.0 formatında sonucu POST eder (üst seviyede id/user yok)."""
         payload = {
             "frame": frame_url,
             "detected_objects": self._cls_alanlarini_donustur(detected_objects),
@@ -282,11 +234,9 @@ class SunucuIstemci:
                 if response.status_code in (200, 201):
                     return True
                 if response.status_code == 406:
-                    # Bu kare için sonuç zaten gönderilmiş, tekrar denemek anlamsız.
                     print(f"[SUNUCU] Kare için sonuç zaten gönderilmiş (406): {frame_url}")
                     return False
                 if response.status_code == 403 and "exceeded" in response.text.lower():
-                    # Yeni hız limiti mesajı: {"detail":"...exceeded <rate> limit."}
                     bekleme = 2.0 * (deneme + 1)
                     print(f"[SUNUCU] Hız limiti aşıldı, {bekleme:.1f}s bekleyip tekrar denenecek.")
                     time.sleep(bekleme)
@@ -298,18 +248,13 @@ class SunucuIstemci:
         return False
 
     def referans_goruntu_indir(self, image_url):
-        """Görev 3 referans görüntüsünü indirir (main.py'nin dışarıdan çağırabilmesi için)."""
+        """Görev 3 referans görüntüsünü indirir (main.py dışarıdan çağırır)."""
         return self._goruntu_indir(image_url)
 
     def referanslari_al(self):
         """
-        Oturum başında sunucudan Görev 3 referans nesnelerini çeker (v2.1.0 /reference/).
-
-        Returns:
-            list[dict]: [{"url", "session", "image_url", "frame_start_image_url",
-                          "frame_end_image_url", "order"}, ...]
-            Boş liste [] → referans yok veya istek başarısız (main.py lokal
-            'referanslar/' klasörüne fallback yapar).
+        /reference/ ile Görev 3 referanslarını çeker.
+        Boş liste -> referans yok/istek başarısız, main.py lokal referanslar/ klasörüne düşer.
         """
         veri = self._get_ile_liste_al(config.API_REFERANS_PATH)
         if veri:
