@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.pyc
+
+# Matplotlib font cache (gereksiz, tekrar üretilebilir)
+mpl_cache/
+
+# Büyük model ağırlıkları ve klonlanmış üçüncü taraf depo
+modeller/*.pt
+modeller/*.pth
+modeller/dinov2_repo/
+
+# Eğitim veri seti (büyük, repoya dahil edilmemeli)
+dataset/
+
+# Eğitim çıktıları (Ultralytics runs/ klasörü - tekrar üretilebilir)
+runs/
+
+# Python sanal ortamı
+venv312/
+venv/
+.venv/
+
+# Yarışma günü indirilen referans/kare görüntüleri
+_images/
+referanslar/
+
+# Lokal test çıktıları (test/sahte_sunucu.py tarafından üretilir)
+test/kareler/
+test/*.mp4
+
+# Log dosyaları
+_logs/
+*.log
+
+# Ortam/kimlik bilgileri
+.env

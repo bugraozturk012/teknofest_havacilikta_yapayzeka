@@ -1,0 +1,23 @@
+# TEKNOFEST 2026 - Havacılıkta Yapay Zeka
+# Python Gereksinimleri
+# Kurulum: pip install -r requirements.txt
+
+# Temel
+numpy>=1.24.0
+opencv-python>=4.8.0
+opencv-contrib-python>=4.8.0
+
+# Derin Öğrenme
+ultralytics>=8.1.0
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Sunucu İletişimi
+requests>=2.31.0
+
+# Yardımcı
+pyyaml>=6.0
+Pillow>=10.0.0
+
+# Lokal test (test/sahte_sunucu.py) - yarışma günü gerekmiyor, sadece geliştirme/test içindir
+flask>=3.0.0

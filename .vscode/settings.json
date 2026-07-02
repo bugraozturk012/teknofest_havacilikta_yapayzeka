@@ -1,0 +1,9 @@
+{
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/mpl_cache": true,
+        "**/venv312": true,
+        "**/*.pyc": true
+    },
+    "python.defaultInterpreterPath": "${workspaceFolder}/venv312/Scripts/python.exe"
+}

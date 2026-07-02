@@ -1,0 +1,41 @@
+{
+  "kare_sayisi": 2250,
+  "toplam_tespit": 4462,
+  "ortalama_tespit_kare": 1.983111111111111,
+  "sifir_tespit_kare_sayisi": 639,
+  "sifir_tespit_ornekleri": [
+    "frame_000030.jpg",
+    "frame_000031.jpg",
+    "frame_000032.jpg",
+    "frame_000033.jpg",
+    "frame_000034.jpg",
+    "frame_000035.jpg",
+    "frame_000036.jpg",
+    "frame_000037.jpg",
+    "frame_000038.jpg",
+    "frame_000039.jpg",
+    "frame_000040.jpg",
+    "frame_000041.jpg",
+    "frame_000042.jpg",
+    "frame_000043.jpg",
+    "frame_000044.jpg",
+    "frame_000045.jpg",
+    "frame_000046.jpg",
+    "frame_000048.jpg",
+    "frame_000049.jpg",
+    "frame_000050.jpg"
+  ],
+  "asiri_tespit_ornekleri": [],
+  "sinif_dagilimi": {
+    "Tasit": 3855,
+    "insan": 255,
+    "UAP": 331,
+    "UAI": 21
+  },
+  "guven_istatistik": {
+    "min": 0.2500022351741791,
+    "max": 0.9440028071403503,
+    "ortalama": 0.5050259726844204,
+    "medyan": 0.4817958325147629
+  }
+}
