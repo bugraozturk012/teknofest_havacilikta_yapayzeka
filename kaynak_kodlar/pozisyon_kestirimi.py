@@ -5,6 +5,11 @@ Kalman Filter + Optical Flow + Keyframe Kalibrasyon
 3 eksenli kestirim (x,y,z metre), health_status yönetimi (1=referans, 0=kendi
 kestirim), ilk 450 kare kalibrasyon dönemi.
 
+Piksel->metre ölçeği artık gerçek kamera kalibrasyonundan (config.KAMERA_KALIBRASYON,
+2026 resmi değerleri) hesaplanıyor: dx_metre = dx_piksel * guncel_Z / fx. Kare
+çözünürlüğü tabloda yoksa ampirik ölçek faktörüne (kalibrasyon penceresinde
+öğrenilen sabit oran) geri düşülür.
+
 Hata formülü: E = (1/N) * Σ √((x̂ᵢ-xᵢ)² + (ŷᵢ-yᵢ)² + (ẑᵢ-zᵢ)²)
 """
 
@@ -115,7 +120,7 @@ class PozisyonKestirimi:
         self.onceki_ozellik_sayisi = None
 
         self.spread_z_verileri = []  # [(spread, z), ...] sağlıklı dönemde
-        self.spread_z_katsayilari = None  # np.polyfit sonucu
+        self.spread_z_sabit = None  # K: Z = K / spread modelindeki sabit
 
         self.son_saglıklı_x = 0.0
         self.son_saglıklı_y = 0.0
@@ -131,6 +136,16 @@ class PozisyonKestirimi:
 
         self.kare_sayaci = 0
         self.onceki_health = 1
+
+        self._kalibrasyon_loglandi = False
+
+    def _odak_uzakligi_bul(self, kare_w, kare_h):
+        """Kare çözünürlüğüne göre resmi kalibrasyondan (fx, fy) döner, tabloda yoksa None."""
+        kalibrasyon = config.KAMERA_KALIBRASYON.get((kare_w, kare_h))
+        if kalibrasyon is None:
+            return None
+        fx, fy, _, _ = kalibrasyon
+        return fx, fy
 
     def _optik_akis_hesapla(self, kare_gri):
         """İki ardışık kare arası piksel kaymasını bulur. RANSAC + medyan ile hareketli nesneler filtrelenir."""
@@ -188,7 +203,8 @@ class PozisyonKestirimi:
     def _feature_spread_hesapla(self, kare_gri):
         """
         Özellik noktalarının merkeze medyan uzaklığı. Drone yükselince noktalar
-        merkeze yaklaşır, alçalınca uzaklaşır - Z kestirimi bu ilişkiyi kullanır.
+        merkeze yaklaşır, alçalınca uzaklaşır. İlişki ters orantılı (Z*spread
+        sabit) - düz projeksiyon geometrisinden, bkz. Z=K/spread kalibrasyonu.
         """
         p = cv2.goodFeaturesToTrack(
             kare_gri, maxCorners=150, qualityLevel=0.01, minDistance=10, blockSize=7
@@ -292,15 +308,17 @@ class PozisyonKestirimi:
             self.son_saglıklı_z = ref_z
 
             spread = self._feature_spread_hesapla(kare_gri)
-            if spread is not None:
+            if spread is not None and spread > 1e-6:
                 self.spread_z_verileri.append((spread, ref_z))
                 if len(self.spread_z_verileri) > 200:
                     self.spread_z_verileri = self.spread_z_verileri[-200:]
                 if len(self.spread_z_verileri) >= 30:
-                    sp_arr = np.array([d[0] for d in self.spread_z_verileri])
-                    z_arr = np.array([d[1] for d in self.spread_z_verileri])
-                    if np.ptp(z_arr) > 0.5:  # yeterli z varyasyonu varsa modeli güncelle
-                        self.spread_z_katsayilari = np.polyfit(sp_arr, z_arr, 1)
+                    # gercek projeksiyon geometrisi: piksel_yayilim = f * dunya_yayilimi / Z,
+                    # yani Z*spread sabit (K) olmali - duz dogru degil ters orantili iliski.
+                    # K'yi medyanla kalibre ediyoruz (aykiri degerlere karsi dayanikli).
+                    urunler = [sp * z for sp, z in self.spread_z_verileri if z > 0.1]
+                    if urunler:
+                        self.spread_z_sabit = float(np.median(urunler))
 
             self.son_saglıklı_x = ref_x
             self.son_saglıklı_y = ref_y
@@ -324,16 +342,36 @@ class PozisyonKestirimi:
                 print(f"[POZISYON] Health 1->0 gecisi: kendi kestirim basladi "
                       f"(kare {self.kare_sayaci})")
 
-            dx_metre = dx_piksel * self.olcek_faktoru_x
-            dy_metre = dy_piksel * self.olcek_faktoru_y
+            kare_h, kare_w = kare_gri.shape[:2]
+            odak = self._odak_uzakligi_bul(kare_w, kare_h)
+
+            if odak is not None:
+                # gercek odak uzakligi + guncel irtifa: piksel kaymasi -> metre
+                # (kamera nadire yakin bakiyor varsayimiyla, duz zemin ustunde
+                # projeksiyon). Ampirik sabit orandan farkli olarak irtifa
+                # degistikce olcek de otomatik dogru ayarlanir.
+                fx, fy = odak
+                z_referans = max(self.kestirim_z, 1.0)
+                dx_metre = dx_piksel * z_referans / fx
+                dy_metre = dy_piksel * z_referans / fy
+                if not self._kalibrasyon_loglandi:
+                    print(f"[POZISYON] Gerçek kamera kalibrasyonu kullanılıyor: "
+                          f"{kare_w}x{kare_h} -> fx={fx:.1f}, fy={fy:.1f}")
+                    self._kalibrasyon_loglandi = True
+            else:
+                dx_metre = dx_piksel * self.olcek_faktoru_x
+                dy_metre = dy_piksel * self.olcek_faktoru_y
+                if not self._kalibrasyon_loglandi:
+                    print(f"[POZISYON] {kare_w}x{kare_h} için resmi kalibrasyon "
+                          f"bulunamadı, ampirik ölçek kullanılıyor.")
+                    self._kalibrasyon_loglandi = True
 
             ham_x = self.kestirim_x - dx_metre
             ham_y = self.kestirim_y + dy_metre
 
             spread = self._feature_spread_hesapla(kare_gri)
-            if spread is not None and self.spread_z_katsayilari is not None:
-                ham_z = float(np.polyval(self.spread_z_katsayilari, spread))
-                ham_z = float(np.clip(ham_z, 0, 300))
+            if spread is not None and spread > 1e-6 and self.spread_z_sabit is not None:
+                ham_z = float(np.clip(self.spread_z_sabit / spread, 0, 300))
             else:
                 ham_z = self._z_kestirim_goruntu_olcegi(kare_gri)
 

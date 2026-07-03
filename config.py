@@ -60,9 +60,16 @@ BASLANGIC_X = 0.0
 BASLANGIC_Y = 0.0
 BASLANGIC_Z = 0.0
 
-# kamera parametreleri, yarışmada paylaşılacak - şimdilik tahmini
-KAMERA_FOV_YATAY = 80.0
-KAMERA_FOV_DIKEY = 60.0
+# Gerçek 2026 kamera kalibrasyonu (resmi_arayuz/Kamera_Kalibrasyon/
+# Kamera_Kalibrasyon_Parametreleri_2026.txt). Anahtar: kare (genislik, yukseklik)
+# piksel - deger: (fx, fy, cx, cy). Kare çözünürlüğüne göre otomatik seçilir
+# (pozisyon_kestirimi.py:_odak_uzakligi_bul), tabloda olmayan bir çözünürlük
+# gelirse ampirik ölçek faktörüne geri düşülür.
+KAMERA_KALIBRASYON = {
+    (640, 512): (731.7965, 732.0172, 319.2367, 251.2424),      # Termal
+    (4000, 3000): (2792.2, 2795.2, 1988.0, 1562.2),            # RGB 4K
+    (1920, 1080): (1389.7, 1387.1, 954.007, 558.896),          # RGB 1080p (test videomuz bu)
+}
 
 OF_WIN_SIZE = (21, 21)
 OF_MAX_LEVEL = 3
@@ -85,9 +92,11 @@ ESLESTIRME_RATIO_TEST = 0.75  # Lowe's ratio test
 ESLESTIRME_SIFT_OLCEK = 0.33
 
 # --- Sunucu iletişimi ---
+# Resmi örnek 5 deneme + üstel artan bekleme kullanıyor (0.1->1.6s), biz de aynı
+# stratejiye geçtik - geçici ağ dalgalanmasını "oturum bitti" sanıp erken çıkma riskini azaltır.
 ISTEK_TIMEOUT = 10
-ISTEK_MAX_RETRY = 3
-ISTEK_RETRY_BEKLEME = 0.5
+ISTEK_MAX_RETRY = 5
+ISTEK_RETRY_BEKLEME = 0.5  # ilk bekleme, her denemede 2 katına çıkar
 
 # --- Eğitim (egitim.py) ---
 EGITIM_MODEL_TIPI = "modeller/yolov8s.pt"

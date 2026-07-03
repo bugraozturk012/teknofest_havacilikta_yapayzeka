@@ -76,7 +76,7 @@ class SunucuIstemci:
                     print(f"[SUNUCU] HTTP {response.status_code} ({api_path})")
             except requests.exceptions.RequestException as e:
                 print(f"[SUNUCU] Bağlantı hatası (deneme {deneme+1}, {api_path}): {e}")
-            time.sleep(config.ISTEK_RETRY_BEKLEME)
+            time.sleep(config.ISTEK_RETRY_BEKLEME * (2 ** deneme))
         return None
 
     def oturumu_baslat(self):
@@ -109,7 +109,7 @@ class SunucuIstemci:
                     print(f"[SUNUCU] HTTP {response.status_code} (progress/)")
             except requests.exceptions.RequestException as e:
                 print(f"[SUNUCU] İlerleme isteği hatası (deneme {deneme+1}): {e}")
-            time.sleep(config.ISTEK_RETRY_BEKLEME)
+            time.sleep(config.ISTEK_RETRY_BEKLEME * (2 ** deneme))
         return None
 
     def siradaki_kareyi_al(self):
@@ -177,37 +177,45 @@ class SunucuIstemci:
             print(f"[SUNUCU] Görüntü indirme hatası: {e}")
         return None
 
-    def _cls_alanlarini_donustur(self, detected_objects):
-        """
-        "cls" düz sayı değil URL olarak gidiyor (classes/1/ gibi).
-        Nesne tespiti modülü dahili olarak hep düz sayı üretir, dönüşüm burada.
-        """
-        if not config.SINIF_URL_FORMATINDA_GONDER:
-            return detected_objects
+    _SAYISAL_ALANLAR = ("top_left_x", "top_left_y", "bottom_right_x", "bottom_right_y")
 
+    def _detected_objects_donustur(self, detected_objects):
+        """
+        "cls" düz sayı değil URL olarak gidiyor (classes/1/ gibi). Sayısal alanlar
+        da string'e çevrilir - resmi connection_handler'daki create_payload()
+        tüm sayısal alanları str() ile gönderiyor, biz aynı formata uyuyoruz.
+        """
         donusturulmus = []
         for nesne in detected_objects:
             yeni_nesne = dict(nesne)
-            try:
-                sinif_id = int(yeni_nesne["cls"])
-                yeni_nesne["cls"] = (
-                    f"{self.sunucu_url}/classes/{sinif_id + config.SINIF_URL_OFSET}/"
-                )
-            except (KeyError, ValueError, TypeError):
-                pass
+            if config.SINIF_URL_FORMATINDA_GONDER:
+                try:
+                    sinif_id = int(yeni_nesne["cls"])
+                    yeni_nesne["cls"] = (
+                        f"{self.sunucu_url}/classes/{sinif_id + config.SINIF_URL_OFSET}/"
+                    )
+                except (KeyError, ValueError, TypeError):
+                    pass
+            for alan in self._SAYISAL_ALANLAR:
+                if alan in yeni_nesne:
+                    yeni_nesne[alan] = str(yeni_nesne[alan])
             donusturulmus.append(yeni_nesne)
         return donusturulmus
 
+    def _translations_donustur(self, detected_translations):
+        """translation_x/y/z alanlarını string'e çevirir (resmi Translation.create_payload ile aynı format)."""
+        return [{k: str(v) for k, v in t.items()} for t in detected_translations]
+
     def _reference_predictions_olustur(self, frame_url, reference_predictions):
-        """eslestir() çıktısını v2.1.0 ReferencePrediction şemasına çevirir (frame alanı eklenir)."""
+        """eslestir() çıktısını v2.1.0 ReferencePrediction şemasına çevirir (frame alanı eklenir, sayısal alanlar string)."""
         return [
             {
                 "reference": r["reference"],
                 "frame": frame_url,
-                "top_left_x": r["top_left_x"],
-                "top_left_y": r["top_left_y"],
-                "bottom_right_x": r["bottom_right_x"],
-                "bottom_right_y": r["bottom_right_y"],
+                "top_left_x": str(r["top_left_x"]),
+                "top_left_y": str(r["top_left_y"]),
+                "bottom_right_x": str(r["bottom_right_x"]),
+                "bottom_right_y": str(r["bottom_right_y"]),
             }
             for r in reference_predictions
         ]
@@ -217,8 +225,8 @@ class SunucuIstemci:
         """v2.1.0 formatında sonucu POST eder (üst seviyede id/user yok)."""
         payload = {
             "frame": frame_url,
-            "detected_objects": self._cls_alanlarini_donustur(detected_objects),
-            "detected_translations": detected_translations,
+            "detected_objects": self._detected_objects_donustur(detected_objects),
+            "detected_translations": self._translations_donustur(detected_translations),
             "reference_predictions": self._reference_predictions_olustur(
                 frame_url, reference_predictions
             ),
@@ -244,7 +252,7 @@ class SunucuIstemci:
                 print(f"[SUNUCU] Sonuç gönderme HTTP {response.status_code}: {response.text[:200]}")
             except requests.exceptions.RequestException as e:
                 print(f"[SUNUCU] Sonuç gönderme hatası (deneme {deneme+1}): {e}")
-            time.sleep(config.ISTEK_RETRY_BEKLEME)
+            time.sleep(config.ISTEK_RETRY_BEKLEME * (2 ** deneme))
         return False
 
     def referans_goruntu_indir(self, image_url):

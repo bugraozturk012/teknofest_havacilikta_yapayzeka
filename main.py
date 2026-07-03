@@ -56,7 +56,9 @@ def _referanslari_yukle(sunucu, eslestirme):
                                if f.lower().endswith(('.jpg', '.png', '.jpeg'))])
         for i, dosya in enumerate(ref_dosyalar):
             yol = os.path.join(referans_klasor, dosya)
-            eslestirme.referans_yukle(i + 1, yol)
+            # anahtar string olmalı - sunucudan gelen referanslarda "reference" alanı URL (string),
+            # eslestir() çıktısı bu anahtarı aynen "reference" alanına koyup sunucuya gönderiyor
+            eslestirme.referans_yukle(str(i + 1), yol)
     else:
         print("[UYARI] Referans klasörü bulunamadı ve sunucudan alınamadı — Görev 3 pasif.")
 
