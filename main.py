@@ -160,10 +160,13 @@ def main():
         detected_objects = nesne_tespit.tespit_et(frame)
 
         # Görev 2: Pozisyon Kestirimi (%40)
+        # guncelle() her karede çağrılır (optik akış/Kalman sürekliliği için), ama
+        # health_status bilinmiyorsa (translation sunucudan hiç gelmediyse) resmi
+        # referans davranışıyla aynı şekilde bu kare için hiç tahmin göndermiyoruz.
         pozisyon_sonuc = pozisyon.guncelle(
             temiz_kare, ref_x, ref_y, ref_z, health
         )
-        detected_translations = [pozisyon_sonuc]
+        detected_translations = [] if health is None else [pozisyon_sonuc]
 
         # Görev 3: Görüntü Eşleştirme (%25) - sadece bu karede aktif olan referanslar aranır
         aktif_ref_anahtarlari = _aktif_referanslari_bul(aktif_ref_pencereleri, image_url)

@@ -47,9 +47,34 @@ class NesneTespiti:
         if os.path.exists(model_yolu):
             print(f"[NESNE] Model yükleniyor: {model_yolu}")
             self.model = YOLO(model_yolu)
-        else:
-            print(f"[NESNE] {model_yolu} bulunamadı, {config.NESNE_TESPIT_FALLBACK} kullanılıyor")
+        elif os.path.exists(config.NESNE_TESPIT_FALLBACK):
+            print(f"[NESNE] UYARI: {model_yolu} bulunamadı, {config.NESNE_TESPIT_FALLBACK} "
+                  f"kullanılıyor. Bu model COCO sınıflarıyla eğitili, yarışma sınıflarıyla "
+                  f"(taşıt/insan/UAP/UAİ) UYUMLU DEĞİL — sadece geliştirme/test için.")
             self.model = YOLO(config.NESNE_TESPIT_FALLBACK)
+        else:
+            # YOLO() burada verilen dosya yerelde yoksa internetten indirmeyi dener -
+            # yarışma ağında internet olmayacağı için bu donma/çökmeye yol açabilir.
+            # Sessizce yanlış bir modele geçmek yerine net bir hata ile durmak daha güvenli.
+            raise FileNotFoundError(
+                f"Ne '{model_yolu}' ne de fallback '{config.NESNE_TESPIT_FALLBACK}' yerelde "
+                f"bulunamadı. YOLO() otomatik indirme deneyip yarışma ağında donabilir/"
+                f"çökebilir. Devam etmeden önce doğru model dosyasını 'modeller/' altına "
+                f"yerleştirin."
+            )
+
+        self.yabanci_obje_modeli = None
+        if os.path.exists(config.INIS_YABANCI_OBJE_MODEL):
+            try:
+                self.yabanci_obje_modeli = YOLO(config.INIS_YABANCI_OBJE_MODEL)
+                print(f"[NESNE] İniş alanı yabancı-obje kontrolü aktif: "
+                      f"{config.INIS_YABANCI_OBJE_MODEL}")
+            except Exception as e:
+                print(f"[NESNE] Yabancı-obje modeli yüklenemedi ({e}), iniş kontrolü "
+                      f"sadece bilinen 4 sınıfla çalışacak.")
+        else:
+            print(f"[NESNE] {config.INIS_YABANCI_OBJE_MODEL} bulunamadı, iniş alanı "
+                  f"yabancı-obje kontrolü pasif (sadece bilinen 4 sınıfla devam ediliyor).")
 
         self.gecmis_konumlar = {}  # {takip_id: son_merkez} - hareket tespiti için
         self.takip_gorulme_sayisi = {}  # {takip_id: kac_karedir_gorunuyor}
@@ -114,7 +139,50 @@ class NesneTespiti:
         except:
             return False
 
-    def _inis_uygunlugu_kontrol(self, alan_bbox, tum_tespitler, kare_boyut):
+    def _yabanci_obje_var_mi(self, frame, genisletilmis_bbox, ped_bbox, kare_boyut):
+        """
+        Pedin genişletilmiş bölgesini genel (COCO) modelle tarar. Modelimiz sadece
+        4 sınıf bildiği için tanımadığı bir cisim (mont, kutu vb. - Şekil 10/11)
+        hiç tespit edilmez ve iniş yanlışlıkla "uygun" sayılabilir; bu ikinci model
+        o boşluğu bir ölçüde kapatır (garanti değil, en iyi çaba).
+
+        Bulunan kutunun pedin kendi alanına oranı düşükse (küçük/yerel bir cisim)
+        yabancı obje sayılır - pedin kendi işaretinin (daire+yazı) yeniden tespit
+        edilip "yabancı obje" sanılmasını böyle önlüyoruz.
+        """
+        kare_h, kare_w = kare_boyut
+        x1 = max(0, int(genisletilmis_bbox[0]))
+        y1 = max(0, int(genisletilmis_bbox[1]))
+        x2 = min(kare_w, int(genisletilmis_bbox[2]))
+        y2 = min(kare_h, int(genisletilmis_bbox[3]))
+        if x2 <= x1 or y2 <= y1:
+            return False
+
+        kirpik = frame[y1:y2, x1:x2]
+        if kirpik.size == 0:
+            return False
+
+        try:
+            sonuc = self.yabanci_obje_modeli.predict(
+                kirpik, conf=config.INIS_YABANCI_OBJE_CONF, verbose=False
+            )
+        except Exception:
+            return False
+
+        if not sonuc or sonuc[0].boxes is None or len(sonuc[0].boxes) == 0:
+            return False
+
+        ped_alan = max(1.0, (ped_bbox[2] - ped_bbox[0]) * (ped_bbox[3] - ped_bbox[1]))
+
+        for bbox in sonuc[0].boxes.xyxy.cpu().numpy():
+            bx1, by1, bx2, by2 = bbox
+            obj_alan = (bx2 - bx1) * (by2 - by1)
+            if obj_alan / ped_alan <= config.INIS_YABANCI_OBJE_ALAN_ORANI_ESIK:
+                return True
+
+        return False
+
+    def _inis_uygunlugu_kontrol(self, alan_bbox, tum_tespitler, kare_boyut, frame=None):
         """
         UAP/UAİ alanı boşsa uygun, üzerinde/yakınında nesne varsa veya kare
         dışına taşıyorsa uygun değil. Perspektif payı (Şekil 11) için alan
@@ -144,6 +212,12 @@ class NesneTespiti:
             overlap_y2 = min(gay2, ty2)
 
             if overlap_x1 < overlap_x2 and overlap_y1 < overlap_y2:
+                return config.INIS_UYGUN_DEGIL
+
+        if self.yabanci_obje_modeli is not None and frame is not None:
+            if self._yabanci_obje_var_mi(
+                frame, (gax1, gay1, gax2, gay2), (ax1, ay1, ax2, ay2), kare_boyut
+            ):
                 return config.INIS_UYGUN_DEGIL
 
         return config.INIS_UYGUN
@@ -234,7 +308,7 @@ class NesneTespiti:
 
             elif sinif_id in [config.SINIF_UAP, config.SINIF_UAI]:
                 inis = self._inis_uygunlugu_kontrol(
-                    (x1, y1, x2, y2), ham_tespitler, (kare_h, kare_w)
+                    (x1, y1, x2, y2), ham_tespitler, (kare_h, kare_w), frame=frame
                 )
                 landing_status = str(inis)
 

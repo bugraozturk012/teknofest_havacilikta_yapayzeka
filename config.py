@@ -33,9 +33,26 @@ SINIF_URL_OFSET = 1   # classes/1/ = Taşıt
 
 # --- Model ---
 NESNE_TESPIT_MODEL = "modeller/best.pt"
-NESNE_TESPIT_FALLBACK = "yolov8n.pt"
+# DİKKAT: best.pt bulunamazsa buraya SADECE yerelde zaten var olan bir dosya
+# yazın. Yarışma ağında internet olmayacağı için nesne_tespiti.py, bu dosya da
+# yoksa YOLO()'nun otomatik indirmeyi denemesini (donma/çökme riski) engelleyip
+# hata fırlatır. Ayrıca bu model COCO sınıflarıyla eğitili - yarışma sınıflarıyla
+# (taşıt/insan/UAP/UAİ) uyumlu DEĞİL, sadece geliştirme/test amaçlıdır.
+NESNE_TESPIT_FALLBACK = "modeller/yolov8s.pt"
 NESNE_TESPIT_CONF = 0.25
 NESNE_TESPIT_IOU = 0.5
+
+# İniş alanı (UAP/UAİ) üzerinde bilinen 4 sınıfın (taşıt/insan/UAP/UAİ) dışında
+# tespit edilemeyen bir "yabancı obje" (mont, kutu vb. - Şartname Şekil 10/11)
+# olup olmadığını kontrol etmek için ikinci, genel (COCO) bir model kullanılır.
+# Sadece ped bölgesi kırpılıp bu modele veriliyor, her karede tam kare taranmıyor.
+# Yerelde yoksa bu kontrol sessizce pasif kalır (sadece bilinen 4 sınıfla devam edilir).
+INIS_YABANCI_OBJE_MODEL = "modeller/yolov8s.pt"
+INIS_YABANCI_OBJE_CONF = 0.4
+# Bulunan kutunun pedin kendi alanına oranı bunun altındaysa "küçük/yerel bir
+# cisim" sayılır (pedin işaretinin/dairenin kendisinin yanlışlıkla yeniden
+# tespit edilip "yabancı obje" sanılmasını önler).
+INIS_YABANCI_OBJE_ALAN_ORANI_ESIK = 0.5
 
 # Bir nesne raporlanmadan önce aynı takip_id ile en az bu kadar ardışık karede
 # görülmeli. Tek karelik gürültü tespitlerini eler, gerçek nesneleri etkilemez.
