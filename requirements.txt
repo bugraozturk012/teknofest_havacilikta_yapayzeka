@@ -15,6 +15,7 @@ lap>=0.5.12   # ultralytics ByteTrack (model.track) bunu gerektiriyor, offline o
 
 # Sunucu İletişimi
 requests>=2.31.0
+python-dotenv>=1.0.0   # config.py .env'den EVALUATION_SERVER_URL/TEAM_NAME/PASSWORD okuyor
 
 # Yardımcı
 pyyaml>=6.0

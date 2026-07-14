@@ -6,9 +6,18 @@ Kalman Filter + Optical Flow + Keyframe Kalibrasyon
 kestirim), ilk 450 kare kalibrasyon dönemi.
 
 Piksel->metre ölçeği artık gerçek kamera kalibrasyonundan (config.KAMERA_KALIBRASYON,
-2026 resmi değerleri) hesaplanıyor: dx_metre = dx_piksel * guncel_Z / fx. Kare
+2026 resmi değerleri) hesaplanıyor: dx_metre = dx_piksel * guncel_irtifa / fx. Kare
 çözünürlüğü tabloda yoksa ampirik ölçek faktörüne (kalibrasyon penceresinde
 öğrenilen sabit oran) geri düşülür.
+
+ÖNEMLİ - Z işareti (resmi yarışma duyurusu): ground truth NED koordinat sisteminde,
+pozitif yön AŞAĞI doğru. Drone yükseldikçe Z azalır ve negatife gider; alçaldıkça
+sıfıra/pozitife yaklaşır. Bu yüzden ham NED Z ("kestirim_z", sunucuya raporlanan
+değer) ile piksel/spread geometrisinde kullanılan pozitif "irtifa" (yere olan
+mesafe) FARKLI şeylerdir - ikisi karıştırılırsa (Z hep pozitifmiş gibi clip'lenirse)
+irtifa arttıkça piksel->metre ölçeği ve Z kestirimi yanlış çıkar. _irtifa_hesapla()/
+_ned_z_hesapla() bu ikisi arasında dönüşüm yapar (ev referansı: ilk health=1 karesindeki
+ham Z). Rapor edilen kestirim_z HER ZAMAN imzalı NED formatında olmalı, clip edilmemeli.
 
 Hata formülü: E = (1/N) * Σ √((x̂ᵢ-xᵢ)² + (ŷᵢ-yᵢ)² + (ẑᵢ-zᵢ)²)
 """
@@ -115,12 +124,14 @@ class PozisyonKestirimi:
         self.onceki_ref_y = None
         self.onceki_ref_z = None
 
-        self.z_gecmisi = []  # sağlıklı dönemdeki z değerleri
+        self.z_gecmisi = []  # sağlıklı dönemdeki ham NED z değerleri
         self.son_saglıklı_z = 0.0
-        self.onceki_ozellik_sayisi = None
 
-        self.spread_z_verileri = []  # [(spread, z), ...] sağlıklı dönemde
-        self.spread_z_sabit = None  # K: Z = K / spread modelindeki sabit
+        # ham NED Z <-> pozitif irtifa dönüşümü için "ev" referansı (ilk health=1 karesindeki Z)
+        self.z_ev_referansi = None
+
+        self.spread_irtifa_verileri = []  # [(spread, irtifa), ...] sağlıklı dönemde
+        self.spread_irtifa_sabit = None  # K: irtifa = K / spread modelindeki sabit
 
         self.son_saglıklı_x = 0.0
         self.son_saglıklı_y = 0.0
@@ -138,6 +149,17 @@ class PozisyonKestirimi:
         self.onceki_health = 1
 
         self._kalibrasyon_loglandi = False
+
+    def _irtifa_hesapla(self, z_ned):
+        """Ham NED Z (pozitif=aşağı) -> ev referansına göre pozitif irtifa (metre)."""
+        if self.z_ev_referansi is None:
+            return 0.0
+        return self.z_ev_referansi - z_ned
+
+    def _ned_z_hesapla(self, irtifa):
+        """Pozitif irtifa -> ham NED Z (pozitif=aşağı), sunucuya raporlanacak formatta."""
+        ev = self.z_ev_referansi if self.z_ev_referansi is not None else 0.0
+        return ev - irtifa
 
     def _odak_uzakligi_bul(self, kare_w, kare_h):
         """Kare çözünürlüğüne göre resmi kalibrasyondan (fx, fy) döner, tabloda yoksa None."""
@@ -195,16 +217,14 @@ class PozisyonKestirimi:
         dx_piksel = float(np.median(hareket[:, 0]))
         dy_piksel = float(np.median(hareket[:, 1]))
 
-        self.onceki_ozellik_sayisi = len(iyi_yeni)
-
         self.onceki_kare_gri = kare_gri.copy()
         return dx_piksel, dy_piksel
 
     def _feature_spread_hesapla(self, kare_gri):
         """
         Özellik noktalarının merkeze medyan uzaklığı. Drone yükselince noktalar
-        merkeze yaklaşır, alçalınca uzaklaşır. İlişki ters orantılı (Z*spread
-        sabit) - düz projeksiyon geometrisinden, bkz. Z=K/spread kalibrasyonu.
+        merkeze yaklaşır, alçalınca uzaklaşır. İlişki ters orantılı (irtifa*spread
+        sabit) - düz projeksiyon geometrisinden, bkz. irtifa=K/spread kalibrasyonu.
         """
         p = cv2.goodFeaturesToTrack(
             kare_gri, maxCorners=150, qualityLevel=0.01, minDistance=10, blockSize=7
@@ -233,7 +253,8 @@ class PozisyonKestirimi:
             kare_fark = self.kare_sayaci - self.son_saglıklı_kare
 
             tahmin_z = self.son_saglıklı_z + egim * kare_fark
-            tahmin_z = np.clip(tahmin_z, 0, 200)  # makul aralıkta tut
+            # NED: pozitif=asagi, yukselince Z negatife gider - clip imzali araliga gore
+            tahmin_z = np.clip(tahmin_z, -300, 50)
             return float(tahmin_z)
         except:
             return self.son_saglıklı_z
@@ -279,6 +300,8 @@ class PozisyonKestirimi:
 
         if frame is None:
             if health_status == 1 and ref_x is not None:
+                if self.z_ev_referansi is None and ref_z is not None:
+                    self.z_ev_referansi = ref_z
                 self.kestirim_x = ref_x
                 self.kestirim_y = ref_y
                 self.kestirim_z = ref_z
@@ -293,6 +316,10 @@ class PozisyonKestirimi:
         dx_piksel, dy_piksel = self._optik_akis_hesapla(kare_gri)
 
         if health_status == 1 and ref_x is not None and ref_y is not None and ref_z is not None:
+            if self.z_ev_referansi is None:
+                self.z_ev_referansi = ref_z
+                print(f"[POZISYON] Ev (referans) Z ayarlandı: {ref_z:.3f} (NED, pozitif=aşağı)")
+
             # sağlıklı dönem: referans pozisyonu kullan + kalibre et
             self.kalman.durumu_ayarla(ref_x, ref_y, ref_z)
 
@@ -307,18 +334,20 @@ class PozisyonKestirimi:
             self.z_gecmisi.append(ref_z)
             self.son_saglıklı_z = ref_z
 
+            irtifa_ref = self._irtifa_hesapla(ref_z)
             spread = self._feature_spread_hesapla(kare_gri)
             if spread is not None and spread > 1e-6:
-                self.spread_z_verileri.append((spread, ref_z))
-                if len(self.spread_z_verileri) > 200:
-                    self.spread_z_verileri = self.spread_z_verileri[-200:]
-                if len(self.spread_z_verileri) >= 30:
-                    # gercek projeksiyon geometrisi: piksel_yayilim = f * dunya_yayilimi / Z,
-                    # yani Z*spread sabit (K) olmali - duz dogru degil ters orantili iliski.
-                    # K'yi medyanla kalibre ediyoruz (aykiri degerlere karsi dayanikli).
-                    urunler = [sp * z for sp, z in self.spread_z_verileri if z > 0.1]
+                self.spread_irtifa_verileri.append((spread, irtifa_ref))
+                if len(self.spread_irtifa_verileri) > 200:
+                    self.spread_irtifa_verileri = self.spread_irtifa_verileri[-200:]
+                if len(self.spread_irtifa_verileri) >= 30:
+                    # gercek projeksiyon geometrisi: piksel_yayilim = f * dunya_yayilimi / irtifa,
+                    # yani irtifa*spread sabit (K) olmali - duz dogru degil ters orantili iliski.
+                    # K'yi medyanla kalibre ediyoruz (aykiri degerlere karsi dayanikli). irtifa
+                    # (ham NED Z DEGIL) her zaman pozitif olmali - filtre bunu garantiliyor.
+                    urunler = [sp * irt for sp, irt in self.spread_irtifa_verileri if irt > 0.1]
                     if urunler:
-                        self.spread_z_sabit = float(np.median(urunler))
+                        self.spread_irtifa_sabit = float(np.median(urunler))
 
             self.son_saglıklı_x = ref_x
             self.son_saglıklı_y = ref_y
@@ -351,9 +380,12 @@ class PozisyonKestirimi:
                 # projeksiyon). Ampirik sabit orandan farkli olarak irtifa
                 # degistikce olcek de otomatik dogru ayarlanir.
                 fx, fy = odak
-                z_referans = max(self.kestirim_z, 1.0)
-                dx_metre = dx_piksel * z_referans / fx
-                dy_metre = dy_piksel * z_referans / fy
+                # kestirim_z ham NED (pozitif=asagi) - piksel/dunya olcegi icin
+                # pozitif irtifaya cevirmek sart, yoksa yukseklerde irtifa_referans
+                # yanlislikla 1.0'a cakilip metre donusumu cok kucuk cikar
+                irtifa_referans = max(self._irtifa_hesapla(self.kestirim_z), 1.0)
+                dx_metre = dx_piksel * irtifa_referans / fx
+                dy_metre = dy_piksel * irtifa_referans / fy
                 if not self._kalibrasyon_loglandi:
                     print(f"[POZISYON] Gerçek kamera kalibrasyonu kullanılıyor: "
                           f"{kare_w}x{kare_h} -> fx={fx:.1f}, fy={fy:.1f}")
@@ -370,8 +402,9 @@ class PozisyonKestirimi:
             ham_y = self.kestirim_y + dy_metre
 
             spread = self._feature_spread_hesapla(kare_gri)
-            if spread is not None and spread > 1e-6 and self.spread_z_sabit is not None:
-                ham_z = float(np.clip(self.spread_z_sabit / spread, 0, 300))
+            if spread is not None and spread > 1e-6 and self.spread_irtifa_sabit is not None:
+                irtifa_tahmini = float(np.clip(self.spread_irtifa_sabit / spread, 0, 300))
+                ham_z = self._ned_z_hesapla(irtifa_tahmini)  # pozitif irtifa -> imzali NED Z
             else:
                 ham_z = self._z_kestirim_goruntu_olcegi(kare_gri)
 

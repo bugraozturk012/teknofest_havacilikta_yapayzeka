@@ -12,6 +12,8 @@ modeller/dinov2_repo/
 
 # Eğitim veri seti (büyük, repoya dahil edilmemeli)
 dataset/
+dataset_29k/
+dataset_eski_4366_YEDEK_20260714/
 
 # Eğitim çıktıları (Ultralytics runs/ klasörü - tekrar üretilebilir)
 runs/
@@ -33,6 +35,11 @@ test/degerlendirme_ciktilari/
 # Log dosyaları
 _logs/
 *.log
+
+# On-etiketleme yardimci scripti gecici/kayit dosyalari
+_on_etiketleme_tmp.jpg
+on_etiketleme_log.csv
+on_etiketleme_temizlik_log.csv
 
 # Ortam/kimlik bilgileri
 .env

@@ -48,8 +48,9 @@ def data_yaml_olustur():
     os.makedirs("dataset", exist_ok=True)
     
     data = {
-        'train': 'dataset/train/images',
-        'val': 'dataset/val/images',
+        'train': 'train/images',
+        'val': 'valid/images',
+        'test': 'test/images',
         'nc': 4,
         'names': ['tasit', 'insan', 'uap', 'uai']
     }
@@ -58,7 +59,7 @@ def data_yaml_olustur():
         yaml.dump(data, f, default_flow_style=False)
     
     print(f"[EGITIM] {DATA_YAML} oluşturuldu.")
-    print("[EGITIM] dataset/train/images ve dataset/val/images klasörlerine")
+    print("[EGITIM] dataset/train/images ve dataset/valid/images klasörlerine")
     print("         görüntüleri ve YOLO formatında etiketleri koyun.")
     return True
 
@@ -89,12 +90,14 @@ def egitimi_baslat():
         print("4. Bu scripti tekrar çalıştırın")
         return
 
-    # Model yükle ve eğit
-    print(f"[EGITIM] Model: {MODEL_TIPI}")
-    model = YOLO(MODEL_TIPI)
+    # Yarım kalan bir eğitim varsa (çökme/kapanma sonrası last.pt diskte kaldıysa) ondan devam et
+    son_checkpoint = f"runs/detect/modeller/{PROJE_ADI}/{CALISTIRMA_ADI}/weights/last.pt"
+    devam_ediyor = os.path.exists(son_checkpoint)
 
-    try:
-        results = model.train(
+    def taze_egitimi_baslat():
+        print(f"[EGITIM] Model: {MODEL_TIPI}")
+        taze_model = YOLO(MODEL_TIPI)
+        return taze_model.train(
             data=DATA_YAML,
             epochs=EPOCH,
             imgsz=IMG_BOYUTU,
@@ -119,11 +122,24 @@ def egitimi_baslat():
             mosaic=1.0,         # Mozaik augmentasyonu
             mixup=0.1,          # MixUp
         )
-        
+
+    try:
+        if devam_ediyor:
+            print(f"[EGITIM] Yarım kalan eğitim bulundu, kaldığı yerden devam ediliyor: {son_checkpoint}")
+            try:
+                model = YOLO(son_checkpoint)
+                results = model.train(resume=True)
+            except Exception as devam_hatasi:
+                # Eğitim zaten tamamlanmışsa Ultralytics resume'u reddeder — bu durumda sıfırdan başla
+                print(f"[EGITIM] Kaldığı yerden devam edilemedi ({devam_hatasi}), sıfırdan başlanıyor.")
+                results = taze_egitimi_baslat()
+        else:
+            results = taze_egitimi_baslat()
+
         print(f"\n[EGITIM] Sonuçlar kaydedildi: {results.save_dir}")
 
         # En iyi modeli kopyala
-        best_model = f"modeller/{PROJE_ADI}/{CALISTIRMA_ADI}/weights/best.pt"
+        best_model = f"runs/detect/modeller/{PROJE_ADI}/{CALISTIRMA_ADI}/weights/best.pt"
         if os.path.exists(best_model):
             import shutil
             shutil.copy2(best_model, "modeller/best.pt")

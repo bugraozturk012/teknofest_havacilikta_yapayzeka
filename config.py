@@ -1,10 +1,16 @@
 """
 TEKNOFEST 2026 - Havacılıkta Yapay Zeka Yarışması
-Merkezi konfigürasyon. Yarışma günü sadece burası güncellenecek.
+Merkezi konfigürasyon. Yarışma günü sadece .env güncellenecek.
 """
 
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # --- Sunucu ---
-SUNUCU_URL = "http://127.0.0.1:5000"  # yarışma günü değişecek
+# .env dosyasından okunuyor (resmi_arayuz ile aynı değişken adları: EVALUATION_SERVER_URL, TEAM_NAME, PASSWORD)
+SUNUCU_URL = os.getenv("EVALUATION_SERVER_URL", "http://127.0.0.1:5000")
 KULLANICI_URL = "http://localhost/users/1/"  # yarışma günü değişecek
 
 # API yolları - resmi_arayuz/TAKIM_BAGLANTI_ARAYUZU/src/connection_handler.py'den (v2.1.0, dokunma)
@@ -17,9 +23,9 @@ API_PROGRESS_PATH = "progress/"   # kaldığı yerden devam için
 API_REFERANS_PATH = "reference/"  # Görev 3 referansları
 
 # --- Kimlik doğrulama ---
-OTURUM_ACMA_AKTIF = False   # sunucu token istiyorsa True
-TAKIM_ADI = ""
-TAKIM_SIFRE = ""
+TAKIM_ADI = os.getenv("TEAM_NAME", "")
+TAKIM_SIFRE = os.getenv("PASSWORD", "")
+OTURUM_ACMA_AKTIF = bool(TAKIM_ADI and TAKIM_SIFRE)   # .env'de ikisi de doluysa otomatik aktif
 
 # --- Hız sınırı ---
 # Resmi örnek kendi hızını MIN_FRAME_INTERVAL ile kısıyor, biz de aynısını yapıyoruz -
@@ -117,9 +123,9 @@ ISTEK_RETRY_BEKLEME = 0.5  # ilk bekleme, her denemede 2 katına çıkar
 
 # --- Eğitim (egitim.py) ---
 EGITIM_MODEL_TIPI = "modeller/yolov8s.pt"
-EGITIM_DATA_YAML = "dataset/data.yaml"
+EGITIM_DATA_YAML = "dataset_29k/data.yaml"
 EGITIM_EPOCH = 150
 EGITIM_IMG_BOYUTU = 640
-EGITIM_BATCH = 32
+EGITIM_BATCH = 16  # 8GB VRAM'de PCIe/termal kararsızlık nedeniyle 32'den düşürüldü
 EGITIM_PROJE_ADI = "teknofest_2026"
-EGITIM_CALISTIRMA_ADI = "egitim_v1"
+EGITIM_CALISTIRMA_ADI = "egitim_v3"  # 2026-07-13: 29.633 görsellik dev datasete geçildi (NUAP/NUAİ->UAP/UAİ remap), eski v2 (4366 görsel) checkpoint'iyle karışmasın diye yeni isim
