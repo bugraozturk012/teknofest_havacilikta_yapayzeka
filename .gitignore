@@ -35,6 +35,10 @@ test/degerlendirme_ciktilari/
 # Log dosyaları
 _logs/
 *.log
+egitim_calisma_log*.txt
+
+# Kök dizine indirilen önceden eğitilmiş ağırlıklar
+/yolo26n.pt
 
 # On-etiketleme yardimci scripti gecici/kayit dosyalari
 _on_etiketleme_tmp.jpg
