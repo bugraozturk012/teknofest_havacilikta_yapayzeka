@@ -82,3 +82,12 @@ python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_
   istemcidir; kendi kodumuz onu birebir kullanmaz ama API davranışını
   anlamak için referans alınmıştır.
 - Algoritmanın çalışma hızı şartnameye göre puanlama kriteri değildir.
+
+## Lisans
+
+MIT Lisansı — bkz. [LICENSE](LICENSE). Kod tek yazarlıdır (Buğra Öztürk).
+
+Lisans yalnızca bu depodaki kendi kodumuzu kapsar. `resmi_arayuz/` bir git
+submodule'üdür; içeriği TEKNOFEST'in deposunda kalır ve kendi koşullarına
+tabidir. Eğitim veri seti, model ağırlıkları (`modeller/*.pt`) ve DINOv2
+ağırlıkları depoda değildir; DINOv2 kendi lisansıyla gelir.
